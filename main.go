@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/url"
 
 	"github.com/caarlos0/env/v10"
@@ -32,6 +33,12 @@ type Config struct {
 	WallabagClientSecret string `env:"WB_CLIENT_SECRET,notEmpty,unset"`
 	WallabagUsername     string `env:"WB_USERNAME,notEmpty"`
 	WallabagPassword     string `env:"WB_PASSWORD,notEmpty,unset"`
+	WallabagTags         string `env:"WB_TAGS" envDefault:"telegram"`
+}
+
+func IsUrl(str string) bool {
+	u, err := url.Parse(str)
+	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
 func main() {
@@ -69,23 +76,26 @@ func main() {
 
 		logrus.Infof("%d (%d): %s", fromId, chatId, text)
 
+		bot.Send(tgbotapi.NewChatAction(chatId, tgbotapi.ChatTyping))
+
 		if !cfg.TelegramAllowList.Allowed(fromId) {
 			bot.Send(tgbotapi.NewMessage(chatId, "This user is not allowed to communicate to this bot"))
 			logrus.Warnf("%d not on allowlist", fromId)
 			continue
 		}
 
-		if _, err := url.Parse(text); err != nil {
-			bot.Send(tgbotapi.NewMessage(chatId, "Bad URL"))
+		if !IsUrl(text) {
+			bot.Send(tgbotapi.NewMessage(chatId, "I couldn't parse that as a URL"))
 			continue
 		}
 
-		if err := wb.AddURL(text); err != nil {
+		if articleId, err := wb.AddURL(text, cfg.WallabagTags); err != nil {
 			logrus.Errorf("Error posting URL: %s", err)
-			bot.Send(tgbotapi.NewMessage(chatId, "Error posting URL. Check logs."))
-			continue
+			bot.Send(tgbotapi.NewMessage(chatId, fmt.Sprintf("Error posting URL. Check logs. %s", err.Error())))
+		} else {
+			msg := tgbotapi.NewMessage(chatId, fmt.Sprintf("Got it: %s/view/%d", cfg.WallabagURL, articleId))
+			msg.DisableNotification = true
+			bot.Send(msg)
 		}
-
-		bot.Send(tgbotapi.NewMessage(chatId, "Got it!"))
 	}
 }

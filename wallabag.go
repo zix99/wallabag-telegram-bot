@@ -19,27 +19,24 @@ type Wallabag struct {
 	token string
 }
 
-func (s *Wallabag) AddURL(bagUrl string) error {
+func (s *Wallabag) AddURL(bagUrl, tags string) (int, error) {
 	if s.token == "" {
 		token, err := s.getNewToken()
 		if err != nil {
-			return err
+			return -1, err
 		}
 		s.token = token
 	}
 
-	// form := url.Values{}
-	// form.Add("url", bagUrl)
-	//form.Add("tags", "telegram")
 	data := map[string]any{
 		"url":  bagUrl,
-		"tags": "telegram",
+		"tags": tags,
 	}
 	dataBytes, _ := json.Marshal(data)
 
 	req, err := http.NewRequest(http.MethodPost, s.Url+"/api/entries.json", bytes.NewReader(dataBytes))
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	req.Header.Add("Authorization", "Bearer "+s.token)
@@ -47,7 +44,7 @@ func (s *Wallabag) AddURL(bagUrl string) error {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	defer res.Body.Close()
@@ -55,10 +52,15 @@ func (s *Wallabag) AddURL(bagUrl string) error {
 
 	if res.StatusCode/100 != 2 {
 		logrus.Warn(string(body))
-		return fmt.Errorf("Unexpected status: %d", res.StatusCode)
+		return -1, fmt.Errorf("Unexpected status: %d", res.StatusCode)
 	}
 
-	return nil
+	respObj := struct {
+		Id int
+	}{}
+	json.Unmarshal(body, &respObj)
+
+	return respObj.Id, nil
 }
 
 func (s *Wallabag) Test() error {
